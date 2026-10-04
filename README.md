@@ -106,7 +106,7 @@ Method, per-case numbers and the full comparison table are in
 ## Running it
 
 ```bash
-git clone https://github.com/<your-github-username>/macro-tracker.git
+git clone https://github.com/ZinoorFatima/macro-tracker.git
 cd macro-tracker
 python -m venv .venv && .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt

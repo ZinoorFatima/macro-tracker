@@ -1,26 +1,34 @@
-"""Claude integration: meal analysis, activity parsing, day rating.
+"""AI flows: meal analysis, activity parsing, day rating.
 
 Three flows, all built on the same shape: a forced tool call whose schema *is*
-the response contract. Claude never returns free prose that the app has to
+the response contract. The model never returns free prose that the app has to
 parse -- it either calls `ask_clarification` to get a missing portion size, or
 it calls the submit tool with structured macros.
 
+Tool schemas are written in the Anthropic shape (`input_schema`) because that is
+this app's native provider; `app/providers.py` translates them for
+OpenAI-compatible endpoints such as Groq, Gemini, OpenRouter and Ollama.
+
 Two things are deliberate here and easy to break on a later edit:
 
-* `tool_choice={"type": "any"}` forces a tool call. Forced tool choice is
-  rejected with a 400 on some newer models (Opus 5.5, Sonnet 5.5, Fable 5.1),
-  so `MODEL` cannot be bumped to one of those without also moving to
-  `{"type": "auto"}` plus a prompt instruction naming the tool.
-* A tool schema constrains shape, not sanity. Claude can return a schema-valid
+* The submit tools are called under a **forced** tool choice. Some models reject
+  that outright (Anthropic's Opus 5.5, Sonnet 5.5 and Fable 5.1 return a 400),
+  and some OpenAI-compatible endpoints do not implement it -- the provider layer
+  falls back to an unforced choice for the latter.
+* A tool schema constrains shape, not sanity. A model can return a schema-valid
   3,000g of protein, so every submitted analysis goes through
   `validate_meal_analysis` / `validate_activity_analysis` before the router
-  sees it.
+  sees it. This matters more, not less, on a smaller free model.
 """
 
-import os
-
-import anthropic
-
+from .providers import (
+    MAX_TOKENS,
+    ProviderOutputError,
+    ProviderUnavailable,
+    ToolCall,
+    get_provider,
+    is_configured,
+)
 from .validation import (
     MAX_ACTIVITY_CALORIES,
     MAX_FEEDBACK_LEN,
@@ -30,12 +38,16 @@ from .validation import (
     coerce_number,
 )
 
-# Overridable so the eval harness can measure a different model without a code
-# change. Must be a model that allows forced tool choice -- see module docstring.
-MODEL = os.environ.get("MACRO_TRACKER_MODEL", "claude-sonnet-5")
-MAX_TOKENS = 2000
-
-_client = None
+__all__ = [
+    "MAX_TOKENS",
+    "AIUnavailableError",
+    "AIOutputError",
+    "ToolCall",
+    "is_configured",
+    "run_analysis",
+    "run_day_rating",
+    "call_with_meta",
+]
 
 
 class AIUnavailableError(Exception):
@@ -44,17 +56,6 @@ class AIUnavailableError(Exception):
 
 class AIOutputError(AIUnavailableError):
     """The AI responded, but with values the app will not store."""
-
-
-def get_client() -> anthropic.Anthropic:
-    global _client
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise AIUnavailableError(
-            "No API key configured. Add ANTHROPIC_API_KEY to the .env file and restart."
-        )
-    if _client is None:
-        _client = anthropic.Anthropic()
-    return _client
 
 
 ASK_CLARIFICATION_TOOL = {
@@ -217,39 +218,30 @@ def day_rating_system_prompt(p) -> str:
     )
 
 
-def _call(system: str, messages: list[dict], tools: list[dict], tool_choice: dict):
-    client = get_client()
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
-    except anthropic.AuthenticationError as e:
-        raise AIUnavailableError("Invalid API key. Check ANTHROPIC_API_KEY in .env.") from e
-    except anthropic.RateLimitError as e:
-        raise AIUnavailableError(
-            "Rate limited by the AI service. Try again in a minute."
-        ) from e
-    except anthropic.APIConnectionError as e:
-        raise AIUnavailableError(
-            "Could not reach the AI service. Check your internet connection."
-        ) from e
-    except anthropic.APIStatusError as e:
-        raise AIUnavailableError(
-            f"AI service error ({e.status_code}). Try again shortly."
-        ) from e
-    for block in response.content:
-        if block.type == "tool_use":
-            return block.name, block.input
-    raise AIUnavailableError("Unexpected AI response format. Try again.")
-
-
 # A clarifying question is rendered as a chat bubble; keep it to a sentence or two.
 MAX_QUESTION_LEN = 500
+
+
+def call_with_meta(
+    system: str, messages: list[dict], tools: list[dict], tool_choice: dict
+) -> ToolCall:
+    """One model round trip, returning the tool call plus usage and served model.
+
+    Provider-level failures are re-raised as `AIUnavailableError` so routers
+    keep one exception type to catch regardless of which provider is configured.
+    """
+    try:
+        return get_provider().complete(system, messages, tools, tool_choice)
+    except ProviderOutputError as e:
+        raise AIOutputError(str(e)) from e
+    except ProviderUnavailable as e:
+        raise AIUnavailableError(str(e)) from e
+
+
+def _call(system: str, messages: list[dict], tools: list[dict], tool_choice: dict):
+    """Just the tool name and arguments, for callers that do not need usage."""
+    result = call_with_meta(system, messages, tools, tool_choice)
+    return result.name, result.arguments
 
 
 def validate_meal_analysis(data: dict) -> dict:

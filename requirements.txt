@@ -1,4 +1,11 @@
 fastapi>=0.111
 uvicorn[standard]>=0.30
-anthropic>=0.40
 python-dotenv>=1.0
+
+# Default provider.
+anthropic>=0.40
+
+# Only needed for the OpenAI-compatible providers (Groq, Gemini, OpenRouter,
+# Ollama). Small and pure-Python, so it ships by default rather than making the
+# free-model path a second install step.
+openai>=1.0

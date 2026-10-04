@@ -4,9 +4,13 @@
     # graders and harness only, no API calls, no spend -- this is what CI runs
     python -m evals.run_evals --offline
 
-    # the real thing, against the live model
+    # the real thing, against whatever provider .env configures
     python -m evals.run_evals --flow meal_macros
     python -m evals.run_evals --reps 3            # all flows, 3 samples each
+
+    # compare two providers on the same cases
+    python -m evals.run_evals --variant baseline
+    python -m evals.run_evals --provider groq --model <id> --variant v1
 
 Two modes:
 
@@ -49,7 +53,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(ROOT / ".env")
 
-from app import ai  # noqa: E402
+from app import ai, providers  # noqa: E402
 from app.targets import compute_targets  # noqa: E402
 from evals.graders import GRADERS, METRICS  # noqa: E402
 
@@ -203,72 +207,54 @@ def run_offline(case: dict) -> dict:
     }
 
 
-def run_live(case: dict, model: str) -> dict:
-    """One real API call for a case, returning the validated outcome."""
-    system, messages, submit_tool = build_request(case)
-    previous_model, ai.MODEL = ai.MODEL, model
-    try:
-        if case["flow"] == "day_rating":
-            response = _raw_call(
-                system,
-                messages,
-                [ai.SUBMIT_DAY_RATING_TOOL],
-                {"type": "tool", "name": "submit_day_rating"},
-            )
-            name, tool_input, meta = response
-            return {
-                "status": "analysis",
-                "analysis": ai.validate_day_rating(tool_input),
-                **meta,
-            }
-        name, tool_input, meta = _raw_call(
-            system, messages, [ai.ASK_CLARIFICATION_TOOL, submit_tool], {"type": "any"}
-        )
-        if name == "ask_clarification":
-            return {"status": "question", "question": ai.validate_question(tool_input), **meta}
-        if name != submit_tool["name"]:
-            raise ai.AIOutputError(f"Unexpected tool {name!r}")
-        return {"status": "analysis", "analysis": ai.VALIDATORS[name](tool_input), **meta}
-    finally:
-        ai.MODEL = previous_model
+def run_live(case: dict, model: str | None) -> dict:
+    """One real model call for a case, returning the validated outcome.
 
-
-def _raw_call(system, messages, tools, tool_choice):
-    """Like `ai._call`, but also returns usage and the served model.
-
-    The eval needs `usage` to derive cost and the served `model` to catch a
-    silent provider substitution, neither of which the app itself cares about.
+    `model` of None means "whatever the environment is configured for", so
+    `--model` stays optional when MACRO_TRACKER_MODEL is already set.
     """
-    client = ai.get_client()
-    response = client.messages.create(
-        model=ai.MODEL,
-        max_tokens=ai.MAX_TOKENS,
-        system=system,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
+    system, messages, submit_tool = build_request(case)
+
+    if case["flow"] == "day_rating":
+        result = ai.call_with_meta(
+            system,
+            messages,
+            [ai.SUBMIT_DAY_RATING_TOOL],
+            {"type": "tool", "name": "submit_day_rating"},
+        )
+        return {
+            "status": "analysis",
+            "analysis": ai.validate_day_rating(result.arguments),
+            **_meta(result),
+        }
+
+    result = ai.call_with_meta(
+        system, messages, [ai.ASK_CLARIFICATION_TOOL, submit_tool], {"type": "any"}
     )
-    meta = {
-        "model": response.model,
-        "stop_reason": response.stop_reason,
-        "usage": {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0)
-            or 0,
-            "cache_creation_input_tokens": getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            )
-            or 0,
-        },
+    if result.name == "ask_clarification":
+        return {
+            "status": "question",
+            "question": ai.validate_question(result.arguments),
+            **_meta(result),
+        }
+    if result.name != submit_tool["name"]:
+        raise ai.AIOutputError(f"Unexpected tool {result.name!r}")
+    return {
+        "status": "analysis",
+        "analysis": ai.VALIDATORS[result.name](result.arguments),
+        **_meta(result),
     }
-    for block in response.content:
-        if block.type == "tool_use":
-            return block.name, block.input, meta
-    raise ai.AIOutputError(f"No tool call in the response (stop_reason={response.stop_reason})")
 
 
-def attempt_case(case: dict, rep: int, model: str, offline: bool) -> dict:
+def _meta(result) -> dict:
+    return {
+        "model": result.model,
+        "stop_reason": result.stop_reason,
+        "usage": result.usage,
+    }
+
+
+def attempt_case(case: dict, rep: int, model: str | None, offline: bool) -> dict:
     """Run and grade one (case, rep), with retries on transient failures.
 
     Scoring is strict per attempt: a case that only succeeds on retry is still
@@ -298,7 +284,7 @@ def attempt_case(case: dict, rep: int, model: str, offline: bool) -> dict:
                 "explanation": {"rejected": str(e)},
                 "retries": attempt,
                 "latency_s": round(time.monotonic() - started, 2),
-                "model": model,
+                "model": model or "unknown",
                 "usage": {},
             }
         except Exception as e:  # transient: rate limit, connection, 5xx
@@ -329,8 +315,10 @@ def attempt_case(case: dict, rep: int, model: str, offline: bool) -> dict:
             "model": served,
             "usage": outcome.get("usage", {}),
         }
-        if not offline and not served.startswith(model.rstrip("-")) and served != model:
+        if not offline and model and served != model and not served.startswith(model):
             # A substituted model invalidates the comparison the eval exists for.
+            # Providers vary in how they echo the id (some append a revision),
+            # so a prefix match is the strictest check that does not false-alarm.
             row["served_model_mismatch"] = True
         return row
 
@@ -437,7 +425,14 @@ def main() -> int:
     parser.add_argument(
         "--variant", default="baseline", help="output directory name: baseline, v1, v2, ..."
     )
-    parser.add_argument("--model", default=ai.MODEL, help="model id to evaluate")
+    parser.add_argument(
+        "--model", default=None, help="model id to evaluate (default: MACRO_TRACKER_MODEL)"
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        help="anthropic, groq, gemini, openrouter, ollama (default: MACRO_TRACKER_PROVIDER)",
+    )
     parser.add_argument(
         "--reps", type=int, default=1, help="samples per case; >1 separates signal from noise"
     )
@@ -465,16 +460,26 @@ def main() -> int:
         print("No cases matched.", file=sys.stderr)
         return 2
 
-    if not args.offline and not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "No ANTHROPIC_API_KEY found. Add it to .env, or pass --offline to run "
-            "the graders against the bundled fixtures without calling the API.",
-            file=sys.stderr,
-        )
-        return 2
+    if not args.offline:
+        if args.model:
+            os.environ["MACRO_TRACKER_MODEL"] = args.model
+        if args.provider:
+            os.environ["MACRO_TRACKER_PROVIDER"] = args.provider
+        providers.reset_provider()
+        ok, detail = providers.is_configured()
+        if not ok:
+            print(
+                f"{detail}\n\nPass --offline to run the graders against the bundled "
+                "fixtures without calling any API.",
+                file=sys.stderr,
+            )
+            return 2
 
     total_calls = len(cases) * args.reps
-    mode = "offline (no API calls)" if args.offline else f"live against {args.model}"
+    if args.offline:
+        mode = "offline (no API calls)"
+    else:
+        mode = f"live against {providers.get_provider().describe()}"
     print(f"Running {len(cases)} case(s) x {args.reps} rep(s) = {total_calls} call(s), {mode}")
 
     rows_by_flow: dict[str, list[dict]] = {}

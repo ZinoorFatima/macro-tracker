@@ -11,7 +11,7 @@ offline and unbilled. The live checks live in `evals/`.
 
 import pytest
 
-from app import ai
+from app import ai, providers
 from tests.conftest import PROFILE
 
 pytestmark = pytest.mark.usefixtures("today")
@@ -337,9 +337,22 @@ class TestRunAnalysisDispatch:
 class TestAvailability:
     def test_a_missing_key_is_reported_as_unavailable(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.setattr(ai, "_client", None)
-        with pytest.raises(ai.AIUnavailableError, match="No API key"):
-            ai.get_client()
+        monkeypatch.delenv("MACRO_TRACKER_PROVIDER", raising=False)
+        available, detail = ai.is_configured()
+        assert available is False
+        assert "ANTHROPIC_API_KEY" in detail
+
+    def test_provider_failures_surface_as_ai_unavailable(self, monkeypatch):
+        """Routers catch one exception type regardless of the provider."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        providers.reset_provider()
+        with pytest.raises(ai.AIUnavailableError):
+            ai.call_with_meta(
+                "sys",
+                [{"role": "user", "content": "x"}],
+                [ai.SUBMIT_MEAL_TOOL],
+                {"type": "any"},
+            )
 
     def test_ai_output_errors_are_a_kind_of_unavailable(self):
         """So routers that already catch AIUnavailableError handle both."""

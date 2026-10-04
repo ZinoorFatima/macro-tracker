@@ -3,6 +3,7 @@
 const App = {
   profile: null,
   aiAvailable: false,
+  aiProvider: "",
   dashboardDate: todayStr(),
 };
 
@@ -56,18 +57,22 @@ function navigate() {
 async function refreshHealth() {
   try {
     const h = await api.health();
-    App.aiAvailable = h.api_key_present;
+    App.aiAvailable = h.ai_available ?? h.api_key_present;
+    App.aiProvider = h.provider || "";
   } catch (e) {
     App.aiAvailable = false;
+    App.aiProvider = "Could not reach the server.";
   }
   const banner = document.getElementById("banner");
   if (App.aiAvailable || sessionStorage.getItem("banner-dismissed")) {
     banner.classList.add("hidden");
     return;
   }
+  // App.aiProvider carries the server's reason, which is more useful than a
+  // generic "add a key" when the real problem is a typo'd model id.
   banner.innerHTML = `
-    <span class="banner-text">AI features are off — add an <code>ANTHROPIC_API_KEY</code>
-      to <code>.env</code> and restart to enable meal analysis and day ratings.
+    <span class="banner-text">AI features are off — ${esc(App.aiProvider)}
+      See <code>.env.example</code> for the free and paid providers this app supports.
       Everything else, including manual logging, works as normal.</span>
     <button class="banner-close" type="button" aria-label="Dismiss">×</button>`;
   banner.classList.remove("hidden");

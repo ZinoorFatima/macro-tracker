@@ -1,6 +1,5 @@
 """Application entry point: configuration, routers, and the static SPA mount."""
 
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 from .db import init_db  # noqa: E402
+from .providers import is_configured  # noqa: E402
 from .routers import activities, days, meals, profile  # noqa: E402
 from .validation import ValidationProblem  # noqa: E402
 
@@ -44,9 +44,17 @@ def health():
     """Liveness plus whether the AI features are configured.
 
     The frontend calls this on load to decide whether to enable the chat panes,
-    so a missing key degrades the app instead of breaking it.
+    so a missing or misconfigured provider degrades the app instead of breaking
+    it. `provider` carries the reason when unavailable and the active
+    provider/model when it is, which is what the banner shows.
     """
-    return {"db": True, "api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+    available, detail = is_configured()
+    return {
+        "db": True,
+        "api_key_present": available,  # kept for backwards compatibility
+        "ai_available": available,
+        "provider": detail,
+    }
 
 
 @app.get("/favicon.ico", include_in_schema=False)

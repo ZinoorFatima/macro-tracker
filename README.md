@@ -25,10 +25,10 @@ vague to estimate — `"pizza"` — it asks one question instead of inventing a 
 | **Validation** | [Pydantic v2](https://docs.pydantic.dev/) | Request models and domain rules share one validation layer |
 | **Server** | [Uvicorn](https://www.uvicorn.org/) | ASGI, with `--reload` for development |
 | **Database** | SQLite (stdlib `sqlite3`), WAL mode | Single-user app; a file beats a service, and no ORM is needed for five tables |
-| **AI** | [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python), Claude Sonnet | Forced tool calls make every response structured, so the app never parses prose |
+| **AI** | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) by default, or any OpenAI-compatible endpoint | Forced tool calls make every response structured, so the app never parses prose. One adapter covers Groq, Gemini, OpenRouter and Ollama |
 | **Frontend** | Vanilla JS, hash router, CSS custom properties | No build step — clone and run. ~1,200 lines, no framework, no `node_modules` |
 | **Charts** | Hand-written inline SVG | One chart; a charting library would be larger than the app's own frontend |
-| **Tests** | pytest + `fastapi.testclient` | 275 tests, no network calls |
+| **Tests** | pytest + `fastapi.testclient` | 324 tests, no network calls |
 | **Evals** | Custom harness (`evals/`) | Measures the three Claude flows against reference values |
 | **Lint** | [Ruff](https://docs.astral.sh/ruff/) | |
 | **CI** | GitHub Actions | Lint, tests, and an offline eval run on every push |
@@ -83,23 +83,60 @@ On Windows, `run.bat` does the venv, install and launch in one step.
 
 ### Enabling the AI features
 
-The app runs without a key — targets, manual logging, history and charts all
-work, and a banner tells you the AI is off. To enable meal analysis, workout
-parsing and day ratings:
+The app runs without any model configured — targets, manual logging, history and
+charts all work, and a banner says why the AI is off. `GET /api/health` reports
+the active provider, or the reason it is unavailable.
 
 ```bash
 cp .env.example .env
-# paste your key from https://console.anthropic.com/settings/keys
 ```
 
-Then restart. `GET /api/health` reports whether a key was found.
+Then pick **one** provider and restart.
+
+**Anthropic** (default, paid, best quality). Roughly $0.005 per meal analysis on
+Sonnet, half that on Haiku — logging a meal a day for a year costs about $2.
+
+```ini
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**A free hosted provider.** Groq, Google Gemini and OpenRouter all have free
+tiers and all speak the OpenAI chat-completions dialect, which the app
+translates to:
+
+```ini
+MACRO_TRACKER_PROVIDER=groq      # or gemini, openrouter
+MACRO_TRACKER_MODEL=<model id>
+GROQ_API_KEY=...
+```
+
+**Fully local, via [Ollama](https://ollama.com).** Free forever and fully
+offline, no key needed:
+
+```ini
+MACRO_TRACKER_PROVIDER=ollama
+MACRO_TRACKER_MODEL=<name from `ollama list`>
+```
+
+Model ids are deliberately **not** defaulted for the non-Anthropic providers.
+Catalogues churn, and a hardcoded id that silently 404s a year from now is worse
+than an error telling you to go pick one — so a missing `MACRO_TRACKER_MODEL`
+fails with a link to that provider's model list.
+
+A note on quality: smaller free models are noticeably worse at portion
+estimation and at *deciding when to ask* rather than guess. The eval harness
+below measures exactly that, so you can compare a free model against a paid one
+on the same 23 cases and decide with numbers.
 
 ### Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | *(unset)* | Enables the AI features |
-| `MACRO_TRACKER_MODEL` | `claude-sonnet-5` | Must support forced `tool_choice` |
+| `MACRO_TRACKER_PROVIDER` | `anthropic` | `anthropic`, `groq`, `gemini`, `openrouter`, `ollama`, or `openai` for any other compatible endpoint |
+| `MACRO_TRACKER_MODEL` | `claude-sonnet-5` on Anthropic, else required | Must support forced tool choice, or the adapter falls back to an unforced one |
+| `ANTHROPIC_API_KEY` | *(unset)* | For the default provider |
+| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` | *(unset)* | For the matching preset |
+| `MACRO_TRACKER_BASE_URL` | *(from the preset)* | Override, or required for `openai` |
 | `MACRO_TRACKER_DB` | `./macro_tracker.db` | SQLite file location |
 
 ---
@@ -113,46 +150,64 @@ app/
   models.py        Pydantic request models
   validation.py    Shared validators and domain limits
   targets.py       BMR / TDEE / macro split (pure functions, no I/O)
-  ai.py            Claude tool definitions, prompts, and output validation
+  ai.py            Tool definitions, prompts, and output validation
+  providers.py     Anthropic + OpenAI-compatible adapters
   routers/         profile, meals, activities, days
 static/            index.html + CSS + vanilla-JS views (no build step)
-tests/             275 pytest tests
+tests/             324 pytest tests
 evals/             Eval harness for the three Claude flows
 scripts/           seed_demo.py
 ```
 
-### How the Claude integration works
+### How the model integration works
 
 All three AI flows use the same shape: a **forced tool call whose schema is the
-response contract**. Claude never returns prose for the app to parse. It either
-calls `ask_clarification` to get a missing portion size, or it calls the submit
-tool with structured macros.
+response contract**. The model never returns prose for the app to parse. It
+either calls `ask_clarification` to get a missing portion size, or it calls the
+submit tool with structured macros.
 
 ```python
-response = client.messages.create(
-    model=MODEL,
-    system=meal_system_prompt(profile, meal_type),
-    messages=conversation,
-    tools=[ASK_CLARIFICATION_TOOL, SUBMIT_MEAL_TOOL],
-    tool_choice={"type": "any"},  # must call one of them
+result = ai.call_with_meta(
+    meal_system_prompt(profile, meal_type),
+    conversation,
+    [ASK_CLARIFICATION_TOOL, SUBMIT_MEAL_TOOL],
+    {"type": "any"},  # must call one of them
 )
 ```
 
 The user's profile and current targets are injected into every system prompt, so
 the same meal scores differently for someone cutting than for someone bulking.
 
-Two consequences worth knowing before changing this code:
+**A tool schema constrains shape, not sanity.** A model can return a
+schema-valid 3,000 g of protein or a score of 47. Every tool call therefore goes
+through `ai.validate_*` before a router sees it, and meal totals are always
+recomputed from the per-item breakdown rather than trusted — the breakdown is
+what the user reviews, so the saved totals have to be the ones that add up to
+it. This matters *more* on a weaker free model, not less.
 
-- `tool_choice: {"type": "any"}` is **rejected with a 400 on some newer models**
-  (Opus 5.5, Sonnet 5.5, Fable 5.1). Bumping `MACRO_TRACKER_MODEL` to one of
-  those also means moving to `{"type": "auto"}` plus a prompt instruction naming
-  the tool.
-- **A tool schema constrains shape, not sanity.** Claude can return a
-  schema-valid 3,000 g of protein or a score of 47. Every tool call therefore
-  goes through `ai.validate_*` before a router sees it, and meal totals are
-  always recomputed from the per-item breakdown rather than trusted — the
-  breakdown is what the user reviews, so the saved totals have to be the ones
-  that add up to it.
+### The provider adapter
+
+Because everything downstream of the call works on a plain dict, swapping
+providers is an adapter rather than a rewrite. `app/providers.py` translates
+three things:
+
+| | Anthropic | OpenAI-compatible |
+| --- | --- | --- |
+| Tool definition | `{name, description, input_schema}` | `{type: "function", function: {…, parameters}}` |
+| Force a call | `tool_choice={"type": "any"}` | `tool_choice="required"` |
+| Arguments arrive as | a `dict` | a JSON **string** |
+
+Three things the adapter handles that are easy to miss:
+
+- **Forced tool choice is not universal.** Anthropic's Opus 5.5, Sonnet 5.5 and
+  Fable 5.1 reject it with a 400, and some OpenAI-compatible endpoints do not
+  implement `required`. The adapter retries once with an unforced choice, then
+  remembers, so the fallback is not re-paid on every later call.
+- **JSON arguments can be malformed.** A weaker model can emit invalid JSON in a
+  tool call, which the Anthropic path structurally cannot. That is caught and
+  surfaced as a retryable error rather than a crash.
+- **Errors are made actionable.** A wrong model id names the provider's model
+  list; a connection failure to Ollama asks whether `ollama serve` is running.
 
 ---
 
@@ -191,14 +246,15 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-275 tests, no network calls, ~8 seconds.
+324 tests, no network calls, ~10 seconds.
 
 | File | Covers |
 | --- | --- |
 | `test_targets.py` | BMR/TDEE against hand-computed reference values, macro reconciliation, the BMR and 1,200 kcal floors |
 | `test_validation.py` | Date parsing, range checks, goal consistency, every model's accept/reject behaviour |
 | `test_api.py` | Every endpoint: status codes, persistence, day-summary arithmetic, partial updates |
-| `test_ai.py` | The Claude boundary with `ai._call` stubbed — malformed, out-of-range and hostile tool output |
+| `test_ai.py` | The model boundary with the provider stubbed — malformed, out-of-range and hostile tool output |
+| `test_providers.py` | Both adapters against fake clients, asserting the exact payload sent on the wire |
 | `test_db.py` | Connection lifecycle and concurrent access |
 | `test_graders.py` | The eval graders, driven in both directions |
 
@@ -228,10 +284,17 @@ a note explaining where it came from.
 
 ```bash
 python -m evals.run_evals --offline          # free: graders + harness only
-python -m evals.run_evals                    # live, billed
+python -m evals.run_evals                    # live, against whatever .env configures
 python -m evals.run_evals --flow meal_macros --reps 3
-python -m evals.run_evals --model claude-opus-5-5 --variant v1
+
+# compare a free model against the paid default on the same cases
+python -m evals.run_evals --variant baseline
+python -m evals.run_evals --provider groq --model <id> --variant v1
 ```
+
+That last pair is the point of the harness: run both, compare the headline
+numbers, and decide whether the free model is good enough for *your* tolerance —
+with data rather than vibes.
 
 ### What is measured
 

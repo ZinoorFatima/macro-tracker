@@ -76,29 +76,40 @@ history and the charts all still work; a banner says exactly what is missing.
 ## Results
 
 The three model-backed flows are measured against a 23-case eval set with
-hand-computed reference values. A real run of `llama3.1:8b`, local on CPU:
+hand-computed reference values. Two full runs, same prompts and same graders:
 
-| Flow | Metric | Score |
-| --- | --- | --- |
-| Day rating | within 2 points of reference | **100%** |
-| Meal analysis | calories within 25% | **67%** |
-| Meal analysis | macro split reconstructs the total | **100%** |
-| Meal analysis | returned a named per-item breakdown | **100%** |
-| Workout parsing | burn within 40% of a MET reference | **20%** |
+| Flow | Metric | `gemini-3.1-flash-lite` | `llama3.1:8b` local |
+| --- | --- | --- | --- |
+| Meal | calories within 25% | **100%** | 67% |
+| Meal | protein within 35% | **100%** | 56% |
+| Meal | macro split reconstructs the total | 100% | 100% |
+| Workout | burn within 40% of a MET reference | **100%** | 20% |
+| Day rating | within 2 points of reference | 100% | 100% |
+| | mean latency per call | **3.7 s** | 65.5 s |
 
-The honest read: good enough for food logging if you glance at the numbers
-before saving, not good enough to trust for exercise burn. Day ratings are
-genuinely strong — the model correctly flagged an under-eating day as a problem
-rather than rewarding the large deficit.
+The honest read: **Gemini got every case it committed to** — not one wrong
+number in the run. Its only failure mode is over-asking, a clarifying question
+on three fully specified meals. The local model has the opposite and worse
+problem: it never asks and produces confidently wrong workout numbers (1026 kcal
+for a session with a ~230 reference). Day ratings tie at 100%, which says that
+judging an already-numeric day is the easy part.
 
-Getting there needed a real fix. Local models call the right tool and then leave
-the nested `items` array empty — 0/2 and 0/3 on two models, identical on
-Ollama's native and OpenAI-compatible endpoints, so it was the models rather
-than the adapter. Swapping tool calling for a `response_format` JSON schema took
-the end-to-end smoke test from 0/3 to 3/3: **a tool schema is advisory, a
-response-format schema constrains generation.**
+Structure was never the problem for either — macro coherence and itemisation are
+100% across both runs, so every failure is an estimation error, not a format
+error.
 
-Method, per-case numbers and the full comparison table are in
+Getting the local path working at all needed a real fix. Local models call the
+right tool and then leave the nested `items` array empty — 0/2 and 0/3 on two
+models, identical on Ollama's native and OpenAI-compatible endpoints, so it was
+the models rather than the adapter. Swapping tool calling for a
+`response_format` JSON schema took the end-to-end smoke test from 0/3 to 3/3:
+**a tool schema is advisory, a response-format schema constrains generation.**
+
+One practical catch worth knowing before you pick Gemini: its free tier allows
+**20 requests per day per model**, not per minute. Fine for logging meals,
+binding for running evals.
+
+Method, per-case tables and the full comparison are in
 [evals/RESULTS.md](evals/RESULTS.md).
 
 ---
@@ -165,11 +176,11 @@ Catalogues churn, and a hardcoded id that silently 404s a year from now is worse
 than an error telling you to go pick one — so a missing `MACRO_TRACKER_MODEL`
 fails with a link to that provider's model list.
 
-A note on quality: smaller free models are noticeably worse at portion
-estimation. Measured on this repo's own eval set, `llama3.1:8b` running locally
-scores **100% on day ratings, 67% on meal calories and 20% on workout calorie
-estimates** — good enough to be useful for food logging, not good enough to
-trust for exercise burn. Full numbers and method in
+A note on quality: free does not have to mean worse. On this repo's own eval
+set, Gemini's free `gemini-3.1-flash-lite` scored **100% on every headline
+metric** and ran ~18x faster than a local `llama3.1:8b`, which managed 67% on
+meal calories and 20% on workout burn. Its free tier is capped at 20 requests
+per day per model, which suits daily logging but not eval runs. Full numbers in
 [evals/RESULTS.md](evals/RESULTS.md).
 
 ### Configuration

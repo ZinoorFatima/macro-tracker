@@ -86,8 +86,14 @@ EVAL_PROFILE.update(
 
 # Per-case wall-clock ceiling. A hung connection can emit keepalives forever, so
 # only a total-time ceiling reliably reclaims the slot.
-CASE_TIMEOUT_S = 120
-MAX_ATTEMPTS = 3
+CASE_TIMEOUT_S = 600
+MAX_ATTEMPTS = 6
+
+# Rate limits get their own schedule. A free tier is metered per minute, so the
+# useful wait is tens of seconds, not the couple of seconds that suits a
+# transient connection error.
+RATE_LIMIT_BACKOFF_S = (20, 45, 75, 110, 150)
+TRANSIENT_BACKOFF_S = (1, 2, 4, 8, 16)
 
 
 class CaseTimeout(Exception):
@@ -292,8 +298,12 @@ def attempt_case(case: dict, rep: int, model: str | None, offline: bool) -> dict
             if attempt == MAX_ATTEMPTS - 1:
                 break
             # Jittered backoff: a tight retry loop turns one 429 into a
-            # torn-down batch and multiplies spend invisibly.
-            time.sleep(min(2**attempt + random.uniform(0, 1), 20))
+            # torn-down batch and multiplies spend invisibly. Rate limits wait
+            # far longer than other transient faults -- see RATE_LIMIT_BACKOFF_S.
+            rate_limited = "rate limit" in str(e).lower()
+            schedule = RATE_LIMIT_BACKOFF_S if rate_limited else TRANSIENT_BACKOFF_S
+            delay = schedule[min(attempt, len(schedule) - 1)] + random.uniform(0, 3)
+            time.sleep(delay)
             continue
 
         grader = GRADERS[case["flow"]]
@@ -448,6 +458,12 @@ def main() -> int:
         help="in-flight requests; keep below your rate limit",
     )
     parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        help="seconds to wait between starting cases; use on a free tier metered per minute",
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=None,
@@ -514,10 +530,16 @@ def main() -> int:
         )
 
         with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-            futures = {
-                pool.submit(attempt_case, case, rep, args.model, args.offline): (case, rep)
-                for case, rep in work
-            }
+            futures = {}
+            for case, rep in work:
+                futures[pool.submit(attempt_case, case, rep, args.model, args.offline)] = (
+                    case,
+                    rep,
+                )
+                # Stagger submissions rather than sleeping inside the worker, so
+                # the pacing applies to request starts and not to grading.
+                if args.delay:
+                    time.sleep(args.delay)
             for future in as_completed(futures):
                 case, rep = futures[future]
                 try:

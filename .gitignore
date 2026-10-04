@@ -24,3 +24,6 @@ evals/results/
 Thumbs.db
 .idea/
 .vscode/
+
+# Editor/agent tooling configs
+.claude/

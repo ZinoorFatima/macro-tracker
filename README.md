@@ -28,7 +28,7 @@ vague to estimate — `"pizza"` — it asks one question instead of inventing a 
 | **AI** | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) by default, or any OpenAI-compatible endpoint | Forced tool calls make every response structured, so the app never parses prose. One adapter covers Groq, Gemini, OpenRouter and Ollama |
 | **Frontend** | Vanilla JS, hash router, CSS custom properties | No build step — clone and run. ~1,200 lines, no framework, no `node_modules` |
 | **Charts** | Hand-written inline SVG | One chart; a charting library would be larger than the app's own frontend |
-| **Tests** | pytest + `fastapi.testclient` | 324 tests, no network calls |
+| **Tests** | pytest + `fastapi.testclient` | 345 tests, no network calls |
 | **Evals** | Custom harness (`evals/`) | Measures the three Claude flows against reference values |
 | **Lint** | [Ruff](https://docs.astral.sh/ruff/) | |
 | **CI** | GitHub Actions | Lint, tests, and an offline eval run on every push |
@@ -118,15 +118,22 @@ MACRO_TRACKER_PROVIDER=ollama
 MACRO_TRACKER_MODEL=<name from `ollama list`>
 ```
 
+This path automatically switches to **schema-constrained output** instead of
+tool calling, because local models reliably call the right tool and then leave
+the nested `items` array empty. See [evals/RESULTS.md](evals/RESULTS.md) for the
+measurements behind that, and for how `llama3.1:8b` actually scores.
+
 Model ids are deliberately **not** defaulted for the non-Anthropic providers.
 Catalogues churn, and a hardcoded id that silently 404s a year from now is worse
 than an error telling you to go pick one — so a missing `MACRO_TRACKER_MODEL`
 fails with a link to that provider's model list.
 
 A note on quality: smaller free models are noticeably worse at portion
-estimation and at *deciding when to ask* rather than guess. The eval harness
-below measures exactly that, so you can compare a free model against a paid one
-on the same 23 cases and decide with numbers.
+estimation. Measured on this repo's own eval set, `llama3.1:8b` running locally
+scores **100% on day ratings, 67% on meal calories and 20% on workout calorie
+estimates** — good enough to be useful for food logging, not good enough to
+trust for exercise burn. Full numbers and method in
+[evals/RESULTS.md](evals/RESULTS.md).
 
 ### Configuration
 
@@ -137,6 +144,7 @@ on the same 23 cases and decide with numbers.
 | `ANTHROPIC_API_KEY` | *(unset)* | For the default provider |
 | `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` | *(unset)* | For the matching preset |
 | `MACRO_TRACKER_BASE_URL` | *(from the preset)* | Override, or required for `openai` |
+| `MACRO_TRACKER_STRUCTURED_OUTPUT` | on for `ollama`, off elsewhere | Force schema-constrained output instead of tool calling |
 | `MACRO_TRACKER_DB` | `./macro_tracker.db` | SQLite file location |
 
 ---
@@ -154,7 +162,7 @@ app/
   providers.py     Anthropic + OpenAI-compatible adapters
   routers/         profile, meals, activities, days
 static/            index.html + CSS + vanilla-JS views (no build step)
-tests/             324 pytest tests
+tests/             345 pytest tests
 evals/             Eval harness for the three Claude flows
 scripts/           seed_demo.py
 ```
@@ -197,7 +205,16 @@ three things:
 | Force a call | `tool_choice={"type": "any"}` | `tool_choice="required"` |
 | Arguments arrive as | a `dict` | a JSON **string** |
 
-Three things the adapter handles that are easy to miss:
+**Structured-output mode.** For providers whose tool calling is too weak, the
+adapter swaps `tools` for `response_format: {"type": "json_schema", ...}`. A
+tool schema is *advisory* — the model is offered one and may ignore parts of it.
+A response-format schema *constrains generation*. On local models that
+distinction took this app from 0/3 to 3/3; the measurements are in
+[evals/RESULTS.md](evals/RESULTS.md). The cost is that one schema means no
+choice of tool, so the model always commits to an analysis instead of asking a
+clarifying question — a trade-off the eval set quantifies rather than hides.
+
+Three more things the adapter handles that are easy to miss:
 
 - **Forced tool choice is not universal.** Anthropic's Opus 5.5, Sonnet 5.5 and
   Fable 5.1 reject it with a 400, and some OpenAI-compatible endpoints do not
@@ -246,7 +263,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-324 tests, no network calls, ~10 seconds.
+345 tests, no network calls, ~15 seconds.
 
 | File | Covers |
 | --- | --- |

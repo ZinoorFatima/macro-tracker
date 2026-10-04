@@ -59,6 +59,10 @@ OPENAI_COMPATIBLE_PRESETS = {
         "key_env": "OLLAMA_API_KEY",
         "key_required": False,
         "docs": "run `ollama list` to see what you have pulled",
+        # Local models reliably call the right tool but leave nested arrays
+        # empty; a response-format schema constrains generation instead of
+        # merely offering one. See OpenAICompatibleProvider's docstring.
+        "structured_output": True,
     },
     # The generic escape hatch: any other OpenAI-compatible endpoint.
     "openai": {
@@ -210,14 +214,40 @@ class OpenAICompatibleProvider(Provider):
     The JSON-string difference is the one that bites: a weaker model can emit
     syntactically invalid JSON, which the Anthropic path simply cannot produce.
     That is caught here and surfaced as a retryable error rather than a crash.
+
+    **Structured-output mode** (`structured_output=True`) swaps tool calling for
+    `response_format: {"type": "json_schema", ...}`. Tool calling is advisory --
+    the model is offered a schema and may ignore parts of it -- whereas a
+    response-format schema constrains generation. That distinction is decisive
+    for small local models: measured on llama3.1:8b and qwen2.5:3b, both call the
+    right tool but leave this app's nested `items` array empty every time, and
+    both fill it correctly under a response-format schema.
+
+    The trade-off is that one schema means no choice of tool, so the model always
+    commits to an analysis and never asks a clarifying question. That is the
+    better failure mode here: these models answered "I need to ask something"
+    without managing to say what. The prompt already asks for assumptions to be
+    stated in the feedback field.
+
+    On by default for the `ollama` preset, off elsewhere -- hosted providers
+    generally do tool calling properly, and keeping their native path preserves
+    the clarification round trip.
     """
 
     name = "openai-compatible"
 
-    def __init__(self, preset: str, model: str, base_url: str, api_key: str):
+    def __init__(
+        self,
+        preset: str,
+        model: str,
+        base_url: str,
+        api_key: str,
+        structured_output: bool = False,
+    ):
         self.preset = preset
         self.model = model
         self.base_url = base_url
+        self.structured_output = structured_output
         self._api_key = api_key
         self._client = None
         # Set once a `required` tool choice has been rejected, so the fallback is
@@ -225,7 +255,8 @@ class OpenAICompatibleProvider(Provider):
         self._forced_choice_unsupported = False
 
     def describe(self) -> str:
-        return f"{self.preset} / {self.model}"
+        mode = " (structured output)" if self.structured_output else ""
+        return f"{self.preset} / {self.model}{mode}"
 
     def _get_client(self):
         try:
@@ -261,8 +292,109 @@ class OpenAICompatibleProvider(Provider):
             return "required"
         return "auto"
 
+    @staticmethod
+    def _submit_tool(tools: list[dict], tool_choice: dict) -> dict:
+        """The tool the model should be constrained to.
+
+        Structured output constrains generation to exactly one schema, so there
+        is no choice to offer. `ask_clarification` is dropped and the submit tool
+        is used, which is also the branch whose fields need to be required.
+        """
+        if tool_choice.get("type") == "tool":
+            for tool in tools:
+                if tool["name"] == tool_choice["name"]:
+                    return tool
+        candidates = [t for t in tools if t["name"] != "ask_clarification"]
+        if not candidates:
+            raise ProviderOutputError("No submit tool was offered.")
+        return candidates[0]
+
+    def _complete_structured(self, system, messages, tools, tool_choice) -> ToolCall:
+        import openai
+
+        client = self._get_client()
+        tool = self._submit_tool(tools, tool_choice)
+        schema = tool["input_schema"]
+
+        instruction = (
+            "Respond with JSON matching the required schema exactly. Every array "
+            "the schema describes must be populated -- an empty array is not a "
+            "valid answer. If anything is ambiguous, make a reasonable assumption "
+            "and state it rather than leaving fields out."
+        )
+        payload_messages = [
+            {"role": "system", "content": f"{system}\n\n{instruction}"},
+            *messages,
+        ]
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                max_tokens=MAX_TOKENS,
+                messages=payload_messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "response", "schema": schema, "strict": True},
+                },
+            )
+        except (openai.APIStatusError, openai.APIConnectionError) as e:
+            raise self._as_unavailable(e) from e
+
+        content = response.choices[0].message.content or ""
+        try:
+            arguments = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise ProviderOutputError("The model returned malformed JSON. Try again.") from e
+        if not isinstance(arguments, dict):
+            raise ProviderOutputError("The model's response was not a JSON object.")
+
+        usage = {}
+        if response.usage:
+            usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            }
+        return ToolCall(
+            name=tool["name"],
+            arguments=arguments,
+            model=response.model or self.model,
+            stop_reason=response.choices[0].finish_reason,
+            usage=usage,
+        )
+
+    def _as_unavailable(self, e) -> ProviderUnavailable:
+        """Map a transport failure to a message that names the fix."""
+        import openai
+
+        if isinstance(e, openai.AuthenticationError):
+            return ProviderUnavailable(f"Invalid API key for {self.preset}. Check your .env.")
+        if isinstance(e, openai.RateLimitError):
+            return ProviderUnavailable(
+                f"Rate limited by {self.preset}. Free tiers have low limits -- "
+                "wait a minute and try again."
+            )
+        if isinstance(e, openai.NotFoundError):
+            preset = OPENAI_COMPATIBLE_PRESETS.get(self.preset, {})
+            return ProviderUnavailable(
+                f"Model {self.model!r} was not found on {self.preset}. "
+                f"Check MACRO_TRACKER_MODEL against {preset.get('docs', 'the model list')}."
+            )
+        if isinstance(e, openai.APIConnectionError):
+            hint = (
+                " Is `ollama serve` running?"
+                if self.preset == "ollama"
+                else " Check your internet connection."
+            )
+            return ProviderUnavailable(f"Could not reach {self.preset}.{hint}")
+        status = getattr(e, "status_code", "unknown")
+        return ProviderUnavailable(f"{self.preset} error ({status}). Try again shortly.")
+
     def complete(self, system, messages, tools, tool_choice) -> ToolCall:
         import openai
+
+        if self.structured_output:
+            return self._complete_structured(system, messages, tools, tool_choice)
 
         client = self._get_client()
         # OpenAI has no separate `system` parameter; it is the first message.
@@ -397,7 +529,12 @@ def build_provider(name: str | None = None, model: str | None = None) -> Provide
         # Ollama ignores the key but the OpenAI client insists on one.
         api_key = "not-needed"
 
-    return OpenAICompatibleProvider(name, model, base_url, api_key)
+    structured = preset.get("structured_output", False)
+    override = os.environ.get("MACRO_TRACKER_STRUCTURED_OUTPUT")
+    if override is not None:
+        structured = override.strip().lower() in ("1", "true", "yes", "on")
+
+    return OpenAICompatibleProvider(name, model, base_url, api_key, structured)
 
 
 def get_provider() -> Provider:

@@ -488,3 +488,155 @@ class TestToolSchemasSurviveTranslation:
 
         for tool in (ai.ASK_CLARIFICATION_TOOL, ai.SUBMIT_MEAL_TOOL, ai.SUBMIT_ACTIVITY_TOOL):
             assert tool.get("description"), tool["name"]
+
+
+class TestStructuredOutputMode:
+    """Schema-constrained generation, for models whose tool calling is too weak.
+
+    Measured on this machine: llama3.1:8b and qwen2.5:3b both call the right
+    tool and then leave this app's nested `items` array empty -- 0/4 and 0/3
+    across Ollama's native and OpenAI-compatible endpoints alike. The same
+    models under `response_format: json_schema` filled it correctly, and the
+    full smoke test went from 0/3 to 3/3. These tests pin the wiring that makes
+    that work.
+    """
+
+    def structured_provider(self, content, model="local-model"):
+        provider = OpenAICompatibleProvider(
+            "ollama", model, "http://x/v1", "key", structured_output=True
+        )
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=content, tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            model=model,
+            usage=SimpleNamespace(prompt_tokens=600, completion_tokens=300),
+        )
+        completions = FakeCompletions(response)
+        provider._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        return provider, completions
+
+    def test_ollama_turns_it_on_by_default(self, monkeypatch):
+        monkeypatch.setenv("MACRO_TRACKER_PROVIDER", "ollama")
+        monkeypatch.setenv("MACRO_TRACKER_MODEL", "llama3.1:8b")
+        assert build_provider().structured_output is True
+
+    @pytest.mark.parametrize("preset", ["groq", "gemini", "openrouter"])
+    def test_hosted_providers_keep_tool_calling(self, monkeypatch, preset):
+        monkeypatch.setenv("MACRO_TRACKER_PROVIDER", preset)
+        monkeypatch.setenv("MACRO_TRACKER_MODEL", "a-model")
+        monkeypatch.setenv("MACRO_TRACKER_API_KEY", "k")
+        assert build_provider().structured_output is False
+
+    @pytest.mark.parametrize(
+        "value,expected", [("1", True), ("true", True), ("0", False), ("no", False)]
+    )
+    def test_it_can_be_overridden_either_way(self, monkeypatch, value, expected):
+        monkeypatch.setenv("MACRO_TRACKER_PROVIDER", "ollama")
+        monkeypatch.setenv("MACRO_TRACKER_MODEL", "m")
+        monkeypatch.setenv("MACRO_TRACKER_STRUCTURED_OUTPUT", value)
+        assert build_provider().structured_output is expected
+
+    def test_the_mode_is_visible_in_the_description(self, monkeypatch):
+        monkeypatch.setenv("MACRO_TRACKER_PROVIDER", "ollama")
+        monkeypatch.setenv("MACRO_TRACKER_MODEL", "llama3.1:8b")
+        assert "structured output" in build_provider().describe()
+
+    def test_it_sends_a_response_format_not_tools(self):
+        provider, completions = self.structured_provider('{"total_calories": 640}')
+        provider.complete("sys", [{"role": "user", "content": "x"}], TOOLS, {"type": "any"})
+        sent = completions.calls[0]
+        assert "tools" not in sent
+        assert "tool_choice" not in sent
+        assert sent["response_format"]["type"] == "json_schema"
+
+    def test_it_constrains_to_the_submit_schema_not_the_clarification(self):
+        """One schema means no choice of tool, so it must be the useful one."""
+        provider, completions = self.structured_provider('{"total_calories": 640}')
+        provider.complete("sys", [], TOOLS, {"type": "any"})
+        schema = completions.calls[0]["response_format"]["json_schema"]["schema"]
+        assert schema == TOOLS[1]["input_schema"]
+        assert "question" not in schema["properties"]
+
+    def test_the_result_is_named_for_the_submit_tool(self):
+        provider, _ = self.structured_provider('{"total_calories": 640}')
+        result = provider.complete("sys", [], TOOLS, {"type": "any"})
+        assert result.name == "submit_meal_analysis"
+        assert result.arguments == {"total_calories": 640}
+
+    def test_a_single_forced_tool_is_used_directly(self):
+        day_tool = {
+            "name": "submit_day_rating",
+            "input_schema": {
+                "type": "object",
+                "properties": {"score": {"type": "integer"}},
+                "required": ["score"],
+            },
+        }
+        provider, completions = self.structured_provider('{"score": 7}')
+        result = provider.complete(
+            "sys", [], [day_tool], {"type": "tool", "name": "submit_day_rating"}
+        )
+        assert result.name == "submit_day_rating"
+        schema = completions.calls[0]["response_format"]["json_schema"]["schema"]
+        assert schema == day_tool["input_schema"]
+
+    def test_the_instruction_demands_populated_arrays(self):
+        """The empty-array failure is the one this mode exists to prevent."""
+        provider, completions = self.structured_provider('{"total_calories": 1}')
+        provider.complete("SYSTEM PROMPT", [], TOOLS, {"type": "any"})
+        system = completions.calls[0]["messages"][0]["content"]
+        assert system.startswith("SYSTEM PROMPT")
+        assert "empty array is not a valid answer" in system
+
+    def test_the_conversation_is_preserved(self):
+        provider, completions = self.structured_provider('{"total_calories": 1}')
+        history = [
+            {"role": "user", "content": "pizza"},
+            {"role": "assistant", "content": "What size?"},
+            {"role": "user", "content": "4 slices"},
+        ]
+        provider.complete("sys", history, TOOLS, {"type": "any"})
+        assert completions.calls[0]["messages"][1:] == history
+
+    def test_malformed_json_is_an_output_error(self):
+        provider, _ = self.structured_provider('{"total_calories": ')
+        with pytest.raises(ProviderOutputError, match="malformed JSON"):
+            provider.complete("sys", [], TOOLS, {"type": "any"})
+
+    def test_a_non_object_response_is_an_output_error(self):
+        provider, _ = self.structured_provider("[1, 2, 3]")
+        with pytest.raises(ProviderOutputError, match="not a JSON object"):
+            provider.complete("sys", [], TOOLS, {"type": "any"})
+
+    def test_empty_content_is_an_output_error(self):
+        provider, _ = self.structured_provider("")
+        with pytest.raises(ProviderOutputError):
+            provider.complete("sys", [], TOOLS, {"type": "any"})
+
+    def test_usage_is_still_reported(self):
+        provider, _ = self.structured_provider('{"total_calories": 1}')
+        result = provider.complete("sys", [], TOOLS, {"type": "any"})
+        assert result.usage["input_tokens"] == 600
+        assert result.usage["output_tokens"] == 300
+
+    def test_errors_are_mapped_the_same_way(self):
+        import openai
+
+        provider, _ = self.structured_provider('{"total_calories": 1}')
+
+        def fail(**kwargs):
+            raise openai.APIConnectionError(request=None)
+
+        provider._client.chat.completions.create = fail
+        with pytest.raises(ProviderUnavailable, match="ollama serve"):
+            provider.complete("sys", [], TOOLS, {"type": "any"})
+
+    def test_no_submit_tool_is_an_output_error(self):
+        provider, _ = self.structured_provider("{}")
+        ask_only = [TOOLS[0]]
+        with pytest.raises(ProviderOutputError, match="No submit tool"):
+            provider.complete("sys", [], ask_only, {"type": "any"})

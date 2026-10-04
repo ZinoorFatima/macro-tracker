@@ -18,9 +18,25 @@ sys.path.insert(0, str(ROOT))
 # Must happen before `app.db` is imported, so no app import sits above this.
 _TMP_DB = Path(tempfile.mkdtemp(prefix="macro-tracker-tests-")) / "test.db"
 os.environ["MACRO_TRACKER_DB"] = str(_TMP_DB)
-# Keep the real key (if the developer has one) out of the unit tests: the AI
-# path is exercised with stubs, and a stray live call would be slow and billed.
-os.environ.pop("ANTHROPIC_API_KEY", None)
+
+# Every variable that selects or configures a model provider. The suite stubs
+# the provider, so a developer's own .env must not reach it -- otherwise the
+# tests pass or fail depending on whose machine they run on, and a stray live
+# call would be slow and, on a paid provider, billed.
+PROVIDER_ENV = (
+    "MACRO_TRACKER_PROVIDER",
+    "MACRO_TRACKER_MODEL",
+    "MACRO_TRACKER_BASE_URL",
+    "MACRO_TRACKER_API_KEY",
+    "MACRO_TRACKER_STRUCTURED_OUTPUT",
+    "ANTHROPIC_API_KEY",
+    "GROQ_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OLLAMA_API_KEY",
+)
+for _name in PROVIDER_ENV:
+    os.environ.pop(_name, None)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -40,6 +56,22 @@ PROFILE = {
 }
 
 TODAY = "2026-01-15"
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_provider(monkeypatch):
+    """Re-clear the provider variables for every test.
+
+    Importing `app.main` runs `load_dotenv`, which puts the developer's .env
+    back into the environment, so clearing once at module import is not enough.
+    """
+    from app import providers
+
+    for name in PROVIDER_ENV:
+        monkeypatch.delenv(name, raising=False)
+    providers.reset_provider()
+    yield
+    providers.reset_provider()
 
 
 @pytest.fixture(autouse=True)

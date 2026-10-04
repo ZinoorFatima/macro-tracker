@@ -46,8 +46,8 @@ scales it by activity level to a TDEE, and applies a goal adjustment. Protein is
 set per kilogram of bodyweight, fat at 25% of calories, carbs fill the remainder.
 A cut is never prescribed below BMR or below 1,200 kcal.
 
-**Meal logging.** Describe a meal; Claude returns a per-item macro breakdown, a
-score against your targets, and concrete suggestions. You review and can edit
+**Meal logging.** Describe a meal; the model returns a per-item macro breakdown,
+a score against your targets, and concrete suggestions. You review and can edit
 every number before it is saved. Manual entry works with no API key at all.
 
 **Workout logging.** Free text (`"bench 4x8 at 60kg then 20 min treadmill"`) is
@@ -63,6 +63,43 @@ you can click into to view or edit any past day.
 
 **Weight tracking.** Logging a new weight recomputes your targets automatically,
 since a 70 kg person and a 62 kg person do not have the same maintenance calories.
+
+**Bring your own model.** Runs on Anthropic, on a free hosted tier (Groq, Google
+Gemini, OpenRouter), or fully offline on a local [Ollama](https://ollama.com)
+model — one `.env` setting, no code change.
+
+**Graceful without a model.** With nothing configured, targets, manual logging,
+history and the charts all still work; a banner says exactly what is missing.
+
+---
+
+## Results
+
+The three model-backed flows are measured against a 23-case eval set with
+hand-computed reference values. A real run of `llama3.1:8b`, local on CPU:
+
+| Flow | Metric | Score |
+| --- | --- | --- |
+| Day rating | within 2 points of reference | **100%** |
+| Meal analysis | calories within 25% | **67%** |
+| Meal analysis | macro split reconstructs the total | **100%** |
+| Meal analysis | returned a named per-item breakdown | **100%** |
+| Workout parsing | burn within 40% of a MET reference | **20%** |
+
+The honest read: good enough for food logging if you glance at the numbers
+before saving, not good enough to trust for exercise burn. Day ratings are
+genuinely strong — the model correctly flagged an under-eating day as a problem
+rather than rewarding the large deficit.
+
+Getting there needed a real fix. Local models call the right tool and then leave
+the nested `items` array empty — 0/2 and 0/3 on two models, identical on
+Ollama's native and OpenAI-compatible endpoints, so it was the models rather
+than the adapter. Swapping tool calling for a `response_format` JSON schema took
+the end-to-end smoke test from 0/3 to 3/3: **a tool schema is advisory, a
+response-format schema constrains generation.**
+
+Method, per-case numbers and the full comparison table are in
+[evals/RESULTS.md](evals/RESULTS.md).
 
 ---
 

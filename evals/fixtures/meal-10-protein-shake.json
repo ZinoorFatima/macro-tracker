@@ -1,0 +1,21 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Whey protein powder",
+        "portion": "1 scoop, 30g",
+        "calories": 120,
+        "protein_g": 24,
+        "carbs_g": 3,
+        "fat_g": 2
+      }
+    ],
+    "total_calories": 120,
+    "total_protein_g": 24,
+    "total_carbs_g": 3,
+    "total_fat_g": 2,
+    "score": 9,
+    "feedback": "Efficient way to close a protein gap at only 120 kcal. Nothing to improve. If you take this post-workout, pairing it with a banana would help recovery without pushing you far over target."
+  }
+}

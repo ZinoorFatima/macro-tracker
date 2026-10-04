@@ -1,0 +1,29 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Grilled chicken wrap with mayo",
+        "portion": "1 wrap",
+        "calories": 528,
+        "protein_g": 33,
+        "carbs_g": 46,
+        "fat_g": 23
+      },
+      {
+        "name": "Coca-Cola",
+        "portion": "330ml can",
+        "calories": 139,
+        "protein_g": 0,
+        "carbs_g": 35,
+        "fat_g": 0
+      }
+    ],
+    "total_calories": 667,
+    "total_protein_g": 33,
+    "total_carbs_g": 81,
+    "total_fat_g": 23,
+    "score": 5,
+    "feedback": "Solid protein from the chicken, but the coke is 139 kcal of pure sugar -- swap it for a diet version or water. Ask for the mayo on the side to save roughly 90 kcal. Assumed a standard cafe wrap of about 250g."
+  }
+}

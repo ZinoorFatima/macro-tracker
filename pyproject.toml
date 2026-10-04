@@ -1,0 +1,49 @@
+[project]
+name = "macro-tracker"
+version = "1.0.0"
+description = "Calorie and macro tracking with Claude-powered meal analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    # starlette's TestClient prefers httpx2; the warning is about the test
+    # client only and says nothing about the app.
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*",
+]
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+exclude = [".venv", "evals/results"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "B008",  # FastAPI's Depends() in a default argument is the documented idiom
+    "E501",  # line length is enforced by the formatter, not the linter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files assert on expressions and import fixtures in-function by design.
+"tests/*" = ["B011", "SIM117"]
+# conftest must set MACRO_TRACKER_DB before the app package is imported.
+"tests/conftest.py" = ["E402"]
+"evals/run_evals.py" = ["E402"]
+"app/main.py" = ["E402"]
+"scripts/seed_demo.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"

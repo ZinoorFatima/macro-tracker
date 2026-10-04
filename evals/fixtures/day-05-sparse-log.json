@@ -1,0 +1,8 @@
+{
+  "tool_name": "submit_day_rating",
+  "tool_input": {
+    "score": 5,
+    "summary": "Only one meal is logged, and it was a good one -- 660 kcal with 68g of protein scored 9/10. But 660 kcal against a 1774 target almost certainly means the day is under-recorded rather than genuinely that low, so there is not much here to judge. No activity or weight was logged either.",
+    "progress_note": "Hard to read your trajectory from a single entry. Logging even rough estimates for the meals you missed is more useful than logging nothing, since the weekly average is what actually drives the 12-week timeline."
+  }
+}

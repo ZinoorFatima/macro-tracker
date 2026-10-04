@@ -1,0 +1,21 @@
+{
+  "tool_name": "submit_activity_analysis",
+  "tool_input": {
+    "exercises": [
+      {
+        "name": "Back squat",
+        "kind": "strength",
+        "sets": 5,
+        "reps": 5,
+        "weight_kg": 80
+      },
+      {
+        "name": "Treadmill, moderate",
+        "kind": "cardio",
+        "duration_min": 20
+      }
+    ],
+    "total_calories_burned": 275,
+    "notes": "Assumed roughly 20 minutes for the squat work including rest (MET ~5) plus 20 minutes of moderate treadmill (MET ~8) at 70kg."
+  }
+}

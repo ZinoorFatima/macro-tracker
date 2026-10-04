@@ -1,0 +1,14 @@
+{
+  "tool_name": "submit_activity_analysis",
+  "tool_input": {
+    "exercises": [
+      {
+        "name": "Running, 5k",
+        "kind": "cardio",
+        "duration_min": 28
+      }
+    ],
+    "total_calories_burned": 300,
+    "notes": "5k in 28 minutes is about 10.7 km/h, MET ~10.5 at 70kg over 28 minutes."
+  }
+}

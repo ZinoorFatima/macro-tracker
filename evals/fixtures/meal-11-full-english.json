@@ -1,0 +1,61 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Fried eggs",
+        "portion": "2 large",
+        "calories": 180,
+        "protein_g": 13,
+        "carbs_g": 1,
+        "fat_g": 14
+      },
+      {
+        "name": "Pork sausages",
+        "portion": "2",
+        "calories": 290,
+        "protein_g": 15,
+        "carbs_g": 10,
+        "fat_g": 22
+      },
+      {
+        "name": "Bacon",
+        "portion": "3 rashers",
+        "calories": 230,
+        "protein_g": 17,
+        "carbs_g": 0,
+        "fat_g": 18
+      },
+      {
+        "name": "Baked beans",
+        "portion": "about 150g",
+        "calories": 120,
+        "protein_g": 7,
+        "carbs_g": 20,
+        "fat_g": 1
+      },
+      {
+        "name": "Fried mushrooms",
+        "portion": "about 80g",
+        "calories": 90,
+        "protein_g": 2,
+        "carbs_g": 3,
+        "fat_g": 8
+      },
+      {
+        "name": "Buttered toast",
+        "portion": "1 slice",
+        "calories": 140,
+        "protein_g": 4,
+        "carbs_g": 15,
+        "fat_g": 7
+      }
+    ],
+    "total_calories": 1050,
+    "total_protein_g": 58,
+    "total_carbs_g": 49,
+    "total_fat_g": 70,
+    "score": 3,
+    "feedback": "This is 1050 kcal and 70g of fat, about 59% of your daily calories before lunch. Poaching the eggs, grilling the bacon and dry-frying the mushrooms would save roughly 250 kcal with no change to the food itself."
+  }
+}

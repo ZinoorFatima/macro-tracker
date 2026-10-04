@@ -1,0 +1,6 @@
+{
+  "tool_name": "ask_clarification",
+  "tool_input": {
+    "question": "What were the leftovers, and roughly how much did you eat?"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Americano, black",
+        "portion": "1 regular",
+        "calories": 4,
+        "protein_g": 0,
+        "carbs_g": 0,
+        "fat_g": 0
+      }
+    ],
+    "total_calories": 4,
+    "total_protein_g": 0,
+    "total_carbs_g": 0,
+    "total_fat_g": 0,
+    "score": 9,
+    "feedback": "Effectively zero calories, so this costs you nothing against your targets. No changes needed. Worth logging the caffeine timing if it affects your sleep, since poor sleep makes a deficit harder to hold."
+  }
+}

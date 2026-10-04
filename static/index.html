@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Macro Tracker</title>
+<meta name="description" content="A macro and calorie tracker where you describe meals in plain English and Claude works out the macros.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0e1216">
+<meta property="og:title" content="Macro Tracker">
+<meta property="og:description" content="Describe what you ate in plain English; Claude estimates the macros, scores the meal against your goal, and rates your day.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>">
+<script>
+  // Applied before first paint so a light-theme user never sees a dark flash.
+  try {
+    var saved = localStorage.getItem("macro-tracker-theme");
+    if (saved) document.documentElement.dataset.theme = saved;
+  } catch (e) { /* private mode: fall through to the OS preference */ }
+</script>
+</head>
+<body>
+<div id="banner" class="banner hidden"></div>
+
+<nav id="nav" class="nav hidden">
+  <div class="nav-brand">🥗 <span>Macro Tracker</span></div>
+  <div class="nav-links">
+    <a href="#/" data-view="dashboard">Today</a>
+    <a href="#/meal" data-view="logmeal">Log Meal</a>
+    <a href="#/activity" data-view="logactivity">Log Activity</a>
+    <a href="#/history" data-view="history">History</a>
+    <a href="#/settings" data-view="settings">Settings</a>
+  </div>
+  <button id="theme-toggle" class="theme-toggle" type="button"
+          aria-label="Switch between light and dark theme" title="Switch theme"></button>
+</nav>
+
+<main id="main">
+  <section id="view-onboarding" class="view hidden"></section>
+  <section id="view-dashboard" class="view hidden"></section>
+  <section id="view-logmeal" class="view hidden"></section>
+  <section id="view-logactivity" class="view hidden"></section>
+  <section id="view-history" class="view hidden"></section>
+  <section id="view-settings" class="view hidden"></section>
+</main>
+
+<script src="/js/api.js"></script>
+<script src="/js/theme.js"></script>
+<script src="/js/views/onboarding.js"></script>
+<script src="/js/views/dashboard.js"></script>
+<script src="/js/views/logmeal.js"></script>
+<script src="/js/views/logactivity.js"></script>
+<script src="/js/views/history.js"></script>
+<script src="/js/views/settings.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "tool_name": "ask_clarification",
+  "tool_input": {
+    "question": "Roughly how long were you there, and was it mostly weights or cardio?"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Rolled oats",
+        "portion": "80g dry",
+        "calories": 302,
+        "protein_g": 11,
+        "carbs_g": 54,
+        "fat_g": 6
+      },
+      {
+        "name": "Semi-skimmed milk",
+        "portion": "250ml",
+        "calories": 124,
+        "protein_g": 8,
+        "carbs_g": 12,
+        "fat_g": 4
+      },
+      {
+        "name": "Banana",
+        "portion": "1 medium",
+        "calories": 105,
+        "protein_g": 1,
+        "carbs_g": 27,
+        "fat_g": 0
+      },
+      {
+        "name": "Honey",
+        "portion": "1 tbsp",
+        "calories": 64,
+        "protein_g": 0,
+        "carbs_g": 17,
+        "fat_g": 0
+      }
+    ],
+    "total_calories": 595,
+    "total_protein_g": 20,
+    "total_carbs_g": 110,
+    "total_fat_g": 10,
+    "score": 7,
+    "feedback": "Good breakfast volume and fibre, but it is carb-heavy and light on protein for a 140g daily target. Stir in a scoop of whey or swap half the milk for greek yoghurt to add about 20g of protein. The honey is optional sugar."
+  }
+}

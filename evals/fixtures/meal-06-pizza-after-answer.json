@@ -1,0 +1,21 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Pepperoni pizza",
+        "portion": "4 slices of a 12-inch",
+        "calories": 1120,
+        "protein_g": 48,
+        "carbs_g": 128,
+        "fat_g": 46
+      }
+    ],
+    "total_calories": 1120,
+    "total_protein_g": 48,
+    "total_carbs_g": 128,
+    "total_fat_g": 46,
+    "score": 3,
+    "feedback": "That is about 63% of your daily calories in one meal, and the saturated fat is high. Two slices with a large side salad would have landed around 600 kcal. Assumed a standard takeaway 12-inch at roughly 280 kcal per slice."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "0% fat Greek yoghurt",
+        "portion": "170g pot",
+        "calories": 100,
+        "protein_g": 17,
+        "carbs_g": 6,
+        "fat_g": 0
+      },
+      {
+        "name": "Blueberries",
+        "portion": "about 40g",
+        "calories": 23,
+        "protein_g": 0,
+        "carbs_g": 6,
+        "fat_g": 0
+      }
+    ],
+    "total_calories": 123,
+    "total_protein_g": 17,
+    "total_carbs_g": 12,
+    "total_fat_g": 0,
+    "score": 9,
+    "feedback": "Excellent snack for your goal: 17g of protein for 123 kcal. If you are hungry later, doubling the berries adds useful fibre for only 23 kcal. Assumed a standard 170g pot and a handful of roughly 40g."
+  }
+}

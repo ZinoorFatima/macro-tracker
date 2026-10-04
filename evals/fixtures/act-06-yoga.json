@@ -1,0 +1,14 @@
+{
+  "tool_name": "submit_activity_analysis",
+  "tool_input": {
+    "exercises": [
+      {
+        "name": "Hatha yoga",
+        "kind": "cardio",
+        "duration_min": 60
+      }
+    ],
+    "total_calories_burned": 175,
+    "notes": "Hatha yoga is MET ~2.5 at a typical class pace; 60 minutes at 70kg."
+  }
+}

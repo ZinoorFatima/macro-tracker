@@ -1,0 +1,8 @@
+{
+  "tool_name": "submit_day_rating",
+  "tool_input": {
+    "score": 3,
+    "summary": "This is far too little food, not a good deficit. 225 kcal against a 1774 target while doing 60 minutes of leg training leaves you in a roughly 1800 kcal hole, and 9g of protein against a 140g goal gives your legs nothing to recover with. The food quality itself was fine -- there just was not any.",
+    "progress_note": "The scale moving down here is mostly water and glycogen, not fat. Days like this cost muscle and make the 12-week timeline harder, not easier. Eat a proper protein-led meal this evening even if it puts you over target."
+  }
+}

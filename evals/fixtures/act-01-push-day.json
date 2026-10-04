@@ -1,0 +1,29 @@
+{
+  "tool_name": "submit_activity_analysis",
+  "tool_input": {
+    "exercises": [
+      {
+        "name": "Bench press",
+        "kind": "strength",
+        "sets": 4,
+        "reps": 8,
+        "weight_kg": 60
+      },
+      {
+        "name": "Overhead press",
+        "kind": "strength",
+        "sets": 3,
+        "reps": 10,
+        "weight_kg": 30
+      },
+      {
+        "name": "Dips",
+        "kind": "strength",
+        "sets": 3,
+        "reps": 10
+      }
+    ],
+    "total_calories_burned": 245,
+    "notes": "Estimated from 50 minutes of moderate resistance training (MET ~5) at 70kg. Assumed about 10 reps per set on the dips since they were taken to failure."
+  }
+}

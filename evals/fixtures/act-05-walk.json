@@ -1,0 +1,14 @@
+{
+  "tool_name": "submit_activity_analysis",
+  "tool_input": {
+    "exercises": [
+      {
+        "name": "Walking, easy pace",
+        "kind": "cardio",
+        "duration_min": 45
+      }
+    ],
+    "total_calories_burned": 155,
+    "notes": "Easy-pace walking is MET ~3; 45 minutes at 70kg."
+  }
+}

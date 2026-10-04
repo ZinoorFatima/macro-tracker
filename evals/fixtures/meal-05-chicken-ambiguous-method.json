@@ -1,0 +1,6 @@
+{
+  "tool_name": "ask_clarification",
+  "tool_input": {
+    "question": "Was the chicken grilled or fried, and roughly how big was the portion?"
+  }
+}

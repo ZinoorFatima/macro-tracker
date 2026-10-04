@@ -1,0 +1,29 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Chicken biryani cooked with ghee",
+        "portion": "400g",
+        "calories": 760,
+        "protein_g": 36,
+        "carbs_g": 82,
+        "fat_g": 32
+      },
+      {
+        "name": "Raita",
+        "portion": "small bowl, about 100g",
+        "calories": 70,
+        "protein_g": 4,
+        "carbs_g": 6,
+        "fat_g": 4
+      }
+    ],
+    "total_calories": 830,
+    "total_protein_g": 40,
+    "total_carbs_g": 88,
+    "total_fat_g": 36,
+    "score": 4,
+    "feedback": "Tasty but calorie-dense -- the ghee is doing most of the damage. Cooking with a tablespoon of oil instead of ghee would cut roughly 150 kcal, and a 250g portion with extra raita would fit your target comfortably."
+  }
+}

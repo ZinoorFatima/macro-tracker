@@ -1,0 +1,45 @@
+{
+  "tool_name": "submit_meal_analysis",
+  "tool_input": {
+    "items": [
+      {
+        "name": "Grilled chicken breast",
+        "portion": "200g",
+        "calories": 330,
+        "protein_g": 62,
+        "carbs_g": 0,
+        "fat_g": 7
+      },
+      {
+        "name": "White rice, cooked",
+        "portion": "180g",
+        "calories": 234,
+        "protein_g": 5,
+        "carbs_g": 51,
+        "fat_g": 1
+      },
+      {
+        "name": "Broccoli, steamed",
+        "portion": "150g",
+        "calories": 51,
+        "protein_g": 4,
+        "carbs_g": 10,
+        "fat_g": 1
+      },
+      {
+        "name": "Olive oil",
+        "portion": "1 tsp",
+        "calories": 40,
+        "protein_g": 0,
+        "carbs_g": 0,
+        "fat_g": 5
+      }
+    ],
+    "total_calories": 655,
+    "total_protein_g": 71,
+    "total_carbs_g": 61,
+    "total_fat_g": 14,
+    "score": 9,
+    "feedback": "This is close to ideal for your cut: 62g of protein, plenty of volume, and a controlled fat source. If you want to trim calories further, drop the rice to 120g. Nothing here needs changing otherwise."
+  }
+}

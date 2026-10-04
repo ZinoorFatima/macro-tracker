@@ -1,0 +1,6 @@
+{
+  "tool_name": "ask_clarification",
+  "tool_input": {
+    "question": "What size pizza was it, and how many slices did you have?"
+  }
+}
